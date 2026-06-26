@@ -3,7 +3,6 @@
 # Verwendung: ./burn.sh <playlist.cue> [--simulate]
 #
 # Voraussetzung: cdrtools (brew install cdrtools)
-# Das CUE-Sheet und die WAV-Dateien müssen im selben Ordner liegen.
 
 set -e
 
@@ -34,30 +33,30 @@ if [ "$2" = "--simulate" ]; then
     echo "*** SIMULATIONSMODUS – es wird nichts gebrannt ***"
 fi
 
-# Optisches Laufwerk suchen
+# Optisches Laufwerk über drutil suchen (zuverlässiger als cdrecord -scanbus auf macOS)
 echo "Suche optisches Laufwerk..."
-DEVICE="$($CDRECORD -scanbus 2>/dev/null | awk '/CD|DVD|Blu/ {print $1; exit}')"
+DISK_NODE="$(drutil status 2>/dev/null | awk '/Name:/{print $NF; exit}')"
 
-if [ -z "$DEVICE" ]; then
-    # Fallback: erstes optisches Gerät über system_profiler
-    DEV_NODE="$(system_profiler SPDiscBurningDataType 2>/dev/null \
-        | awk '/Interconnect:/{found=1} found && /BSD Name:/{print $NF; exit}')"
-    if [ -n "$DEV_NODE" ]; then
-        DEVICE="/dev/$DEV_NODE"
-    fi
+if [ -z "$DISK_NODE" ]; then
+    # Fallback: system_profiler
+    DISK_NODE="$(system_profiler SPDiscBurningDataType 2>/dev/null \
+        | awk '/BSD Name:/{print $NF; exit}')"
 fi
 
-if [ -z "$DEVICE" ]; then
+if [ -z "$DISK_NODE" ]; then
     echo "ERROR: Kein optisches Laufwerk gefunden."
     echo "       Stelle sicher, dass eine leere CD eingelegt ist."
     exit 1
 fi
 
+# cdrecord braucht das raw device (rdisk statt disk)
+DEVICE="/dev/r${DISK_NODE#/dev/}"
+
 echo "Laufwerk: $DEVICE"
 echo "CUE:      $CUE_FILE"
 echo ""
 
-# WAV-Dateien aus CUE lesen und prüfen
+# WAV-Dateien aus CUE prüfen
 echo "Prüfe Tracks..."
 MISSING=0
 while IFS= read -r line; do
@@ -81,13 +80,14 @@ fi
 
 echo ""
 
+# cdrecord braucht root für Gerätezugriff und Echtzeit-Priorität
+cd "$CUE_DIR"
+
 if [ "$SIMULATE" -eq 1 ]; then
-    echo "Simulation:"
-    "$CDRECORD" -v -dao -text -dummy "dev=$DEVICE" "cuefile=$CUE_FILE"
+    echo "Simulation (kein echter Brennvorgang):"
+    sudo "$CDRECORD" -v -dao -text -dummy "dev=$DEVICE" "cuefile=$(basename "$CUE_FILE")"
 else
     echo "Starte Brennvorgang – CD nicht entnehmen!"
     echo ""
-    # In das CUE-Verzeichnis wechseln, da cdrecord relative Pfade im CUE erwartet
-    cd "$CUE_DIR"
-    "$CDRECORD" -v -dao -text "dev=$DEVICE" "cuefile=$(basename "$CUE_FILE")"
+    sudo "$CDRECORD" -v -dao -text "dev=$DEVICE" "cuefile=$(basename "$CUE_FILE")"
 fi
