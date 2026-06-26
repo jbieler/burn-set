@@ -62,16 +62,6 @@ echo "✓ mutagen installiert"
 # Skript ausführbar machen
 chmod +x "$SCRIPT_DIR/run.sh"
 
-# ffmpeg-Pfad in djset_cleaner.py anpassen (falls nicht in /opt/homebrew)
-FFMPEG_PATH="$(command -v ffmpeg)"
-FFPROBE_PATH="$(command -v ffprobe)"
-sed -i '' \
-    "s|FFMPEG = \".*\"|FFMPEG = \"$FFMPEG_PATH\"|" \
-    "$SCRIPT_DIR/djset_cleaner.py"
-sed -i '' \
-    "s|FFPROBE = \".*\"|FFPROBE = \"$FFPROBE_PATH\"|" \
-    "$SCRIPT_DIR/djset_cleaner.py"
-
 echo ""
 echo "Installation abgeschlossen."
 echo ""

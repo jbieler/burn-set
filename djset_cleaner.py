@@ -25,8 +25,19 @@ except ImportError:
     sys.exit(1)
 
 
-FFMPEG = "/opt/homebrew/bin/ffmpeg"
-FFPROBE = "/opt/homebrew/bin/ffprobe"
+def _find_tool(name: str) -> str:
+    import shutil
+    path = shutil.which(name)
+    if path:
+        return path
+    for candidate in [f"/opt/homebrew/bin/{name}", f"/usr/local/bin/{name}", f"/usr/bin/{name}"]:
+        if Path(candidate).exists():
+            return candidate
+    print(f"ERROR: '{name}' nicht gefunden. Installiere es mit: brew install ffmpeg")
+    sys.exit(1)
+
+FFMPEG  = _find_tool("ffmpeg")
+FFPROBE = _find_tool("ffprobe")
 TARGET_SR = "44100"
 TARGET_DEPTH = "pcm_s16le"
 TARGET_CH = "2"
