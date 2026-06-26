@@ -284,7 +284,7 @@ def main():
     output_dir = (
         Path(sys.argv[2]).expanduser()
         if len(sys.argv) > 2
-        else Path.home() / "burn-set" / "output"
+        else Path.cwd() / "output"
     )
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -342,7 +342,7 @@ def main():
 
     # Ausgabe-Playlist(en) schreiben
     stem = sanitize_filename(playlist_path.stem)
-    burn_set_dir = Path.home() / "burn-set"
+    burn_set_dir = Path.cwd()
 
     completed = [t for t in tracks if t.get("out_path")]
     secs = total_duration_seconds(completed)
