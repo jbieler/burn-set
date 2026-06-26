@@ -131,11 +131,13 @@ echo ""
 # cdrecord braucht root für Gerätezugriff und Echtzeit-Priorität
 cd "$CUE_DIR"
 
+SPEED=8
+
 if [ "$SIMULATE" -eq 1 ]; then
     echo "Simulation (kein echter Brennvorgang):"
-    sudo "$CDRECORD" -v -dao -text -pad -overburn -dummy "dev=$DEVICE" "cuefile=$(basename "$CUE_FILE")"
+    sudo "$CDRECORD" -v -dao -text -pad -overburn -dummy "speed=$SPEED" "dev=$DEVICE" "cuefile=$(basename "$CUE_FILE")"
 else
-    echo "Starte Brennvorgang – CD nicht entnehmen!"
+    echo "Starte Brennvorgang mit ${SPEED}x – CD nicht entnehmen!"
     echo ""
-    sudo "$CDRECORD" -v -dao -text -pad -overburn "dev=$DEVICE" "cuefile=$(basename "$CUE_FILE")"
+    sudo "$CDRECORD" -v -dao -text -pad -overburn "speed=$SPEED" "dev=$DEVICE" "cuefile=$(basename "$CUE_FILE")"
 fi
