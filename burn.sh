@@ -89,9 +89,9 @@ cd "$CUE_DIR"
 
 if [ "$SIMULATE" -eq 1 ]; then
     echo "Simulation (kein echter Brennvorgang):"
-    sudo "$CDRECORD" -v -dao -text -dummy "dev=$DEVICE" "cuefile=$(basename "$CUE_FILE")"
+    sudo "$CDRECORD" -v -dao -text -pad -dummy "dev=$DEVICE" "cuefile=$(basename "$CUE_FILE")"
 else
     echo "Starte Brennvorgang – CD nicht entnehmen!"
     echo ""
-    sudo "$CDRECORD" -v -dao -text "dev=$DEVICE" "cuefile=$(basename "$CUE_FILE")"
+    sudo "$CDRECORD" -v -dao -text -pad "dev=$DEVICE" "cuefile=$(basename "$CUE_FILE")"
 fi
