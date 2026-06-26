@@ -1,0 +1,7 @@
+.venv/
+
+# Generierte Playlist-Verzeichnisse und M3U-Dateien im Root
+*/
+*.m3u
+*.m3u8
+*.cue

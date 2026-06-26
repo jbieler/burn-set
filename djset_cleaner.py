@@ -285,7 +285,7 @@ def split_playlist(tracks: list) -> tuple:
 
 def main():
     if len(sys.argv) < 2:
-        print("Verwendung: python3 djset_cleaner.py <playlist.m3u> [ausgabe_ordner]")
+        print("Verwendung: python3 djset_cleaner.py <playlist.m3u>")
         sys.exit(1)
 
     playlist_path = Path(sys.argv[1])
@@ -293,11 +293,9 @@ def main():
         print(f"ERROR: Playlist nicht gefunden: {playlist_path}")
         sys.exit(1)
 
-    output_dir = (
-        Path(sys.argv[2]).expanduser()
-        if len(sys.argv) > 2
-        else Path.cwd() / "output"
-    )
+    stem = sanitize_filename(playlist_path.stem)
+    disc_dir = Path.cwd() / stem
+    output_dir = disc_dir / "output"
     output_dir.mkdir(parents=True, exist_ok=True)
 
     tracks = parse_m3u(playlist_path)
@@ -319,12 +317,10 @@ def main():
             errors.append(str(src))
             continue
 
-        # Metadaten: Quelldatei hat Vorrang, EXTINF als Fallback
         source_tags = read_source_tags(src)
         meta = merge_metadata(source_tags, track["extinf_title"])
         track["meta"] = meta
 
-        # Ausgabedateiname aus bereinigten Tags
         name_base = f"{i:02d} - {meta['artist']} - {meta['title']}" if meta["artist"] else f"{i:02d} - {meta['title']}"
         clean_stem = sanitize_filename(name_base)
         out_path = output_dir / (clean_stem + ".wav")
@@ -352,54 +348,39 @@ def main():
             print(f"{prefix} [FEHLER]   {src.name} → {e}")
             errors.append(str(src))
 
-    # Ausgabe-Playlist(en) schreiben
-    stem = sanitize_filename(playlist_path.stem)
-    burn_set_dir = Path.cwd()
-
     completed = [t for t in tracks if t.get("out_path")]
     secs = total_duration_seconds(completed)
-    LIMIT = 80 * 60  # 80 Minuten in Sekunden
+    LIMIT = 80 * 60
+    disc_title = playlist_path.stem
 
     print(f"\n{'─' * 55}")
     print(f"Fertig: {total - len(errors)}/{total} Tracks bereinigt")
     print(f"Gesamtlänge: {secs // 60}:{secs % 60:02d} min")
-
-    disc_title = playlist_path.stem
 
     if secs > LIMIT:
         tracks_a, tracks_b = split_playlist(completed)
         secs_a = total_duration_seconds(tracks_a)
         secs_b = total_duration_seconds(tracks_b)
 
-        out_m3u_a = burn_set_dir / (stem + "_A.m3u")
-        out_m3u_b = burn_set_dir / (stem + "_B.m3u")
-        out_cue_a = burn_set_dir / (stem + "_A.cue")
-        out_cue_b = burn_set_dir / (stem + "_B.cue")
-
-        write_m3u(tracks_a, out_m3u_a)
-        write_m3u(tracks_b, out_m3u_b)
-        write_cue(tracks_a, out_cue_a, disc_title=disc_title + " (A)")
-        write_cue(tracks_b, out_cue_b, disc_title=disc_title + " (B)")
+        write_m3u(tracks_a, disc_dir / (stem + "_A.m3u"))
+        write_cue(tracks_a, disc_dir / (stem + "_A.cue"), disc_title=disc_title + " (A)")
+        write_m3u(tracks_b, disc_dir / (stem + "_B.m3u"))
+        write_cue(tracks_b, disc_dir / (stem + "_B.cue"), disc_title=disc_title + " (B)")
 
         print(f"Playlist > 80 min → aufgeteilt in A und B (abwechselnd):")
-        print(f"  Playlist A: {len(tracks_a)} Tracks, {secs_a // 60}:{secs_a % 60:02d} min")
-        print(f"    M3U: {out_m3u_a}")
-        print(f"    CUE: {out_cue_a}")
-        print(f"  Playlist B: {len(tracks_b)} Tracks, {secs_b // 60}:{secs_b % 60:02d} min")
-        print(f"    M3U: {out_m3u_b}")
-        print(f"    CUE: {out_cue_b}")
+        print(f"  Disc A: {len(tracks_a)} Tracks, {secs_a // 60}:{secs_a % 60:02d} min")
+        print(f"  Disc B: {len(tracks_b)} Tracks, {secs_b // 60}:{secs_b % 60:02d} min")
+        print(f"  Ordner: {disc_dir}")
         print()
-        print(f"Brennen (Disc A):  ./burn.sh \"{out_cue_a}\"")
-        print(f"Brennen (Disc B):  ./burn.sh \"{out_cue_b}\"")
+        print(f"Brennen (Disc A):  ./burn.sh \"{disc_dir / (stem + '_A.cue')}\"")
+        print(f"Brennen (Disc B):  ./burn.sh \"{disc_dir / (stem + '_B.cue')}\"")
     else:
-        out_playlist = burn_set_dir / (stem + "_clean.m3u")
-        out_cue     = burn_set_dir / (stem + ".cue")
-        write_m3u(completed, out_playlist)
-        write_cue(completed, out_cue, disc_title=disc_title)
-        print(f"M3U: {out_playlist}")
-        print(f"CUE: {out_cue}")
+        write_m3u(completed, disc_dir / (stem + ".m3u"))
+        write_cue(completed, disc_dir / (stem + ".cue"), disc_title=disc_title)
+
+        print(f"Ordner:  {disc_dir}")
         print()
-        print(f"Brennen:  ./burn.sh \"{out_cue}\"")
+        print(f"Brennen:  ./burn.sh \"{disc_dir / (stem + '.cue')}\"")
 
     if errors:
         print(f"\nFehler ({len(errors)}):")
