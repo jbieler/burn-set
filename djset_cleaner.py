@@ -243,17 +243,23 @@ def write_cue(tracks: list, out: Path, disc_title: str = "") -> None:
     Schreibt ein CUE-Sheet mit CD Text.
     Jede WAV-Datei ist ein eigener FILE-Eintrag (noncompliant split-file CUE),
     was cdrecord -dao korrekt verarbeitet.
+    Pfade werden relativ zum Speicherort des CUE-Sheets geschrieben.
     """
+    cue_dir = out.parent
     with open(out, "w", encoding="utf-8") as f:
         if disc_title:
             f.write(f'TITLE "{sanitize_tag(disc_title)}"\n')
         f.write('REM COMMENT "Created by DJ Set Cleaner"\n')
         for i, t in enumerate(tracks, 1):
-            wav = Path(t["out_path"]).name
+            wav_abs = Path(t["out_path"])
+            try:
+                wav_rel = wav_abs.relative_to(cue_dir)
+            except ValueError:
+                wav_rel = wav_abs  # Fallback: absoluter Pfad
             meta = t.get("meta", {})
             title = sanitize_tag(meta.get("title", "")) or t["extinf_title"]
             artist = sanitize_tag(meta.get("artist", ""))
-            f.write(f'FILE "{wav}" WAVE\n')
+            f.write(f'FILE "{wav_rel}" WAVE\n')
             f.write(f"  TRACK {i:02d} AUDIO\n")
             f.write(f'    TITLE "{title}"\n')
             if artist:
