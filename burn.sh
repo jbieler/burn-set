@@ -62,12 +62,17 @@ MISSING=0
 while IFS= read -r line; do
     if [[ "$line" =~ ^FILE\ \"(.+)\"\ WAVE ]]; then
         WAV="${BASH_REMATCH[1]}"
-        FULL="$CUE_DIR/$WAV"
+        # Absoluten oder relativen Pfad korrekt auflösen
+        if [[ "$WAV" = /* ]]; then
+            FULL="$WAV"
+        else
+            FULL="$CUE_DIR/$WAV"
+        fi
         if [ ! -f "$FULL" ]; then
-            echo "  FEHLER: $WAV nicht gefunden"
+            echo "  FEHLER: $FULL nicht gefunden"
             MISSING=$((MISSING + 1))
         else
-            echo "  OK: $WAV"
+            echo "  OK: $(basename "$WAV")"
         fi
     fi
 done < "$CUE_FILE"
