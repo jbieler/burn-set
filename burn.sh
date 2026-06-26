@@ -33,24 +33,23 @@ if [ "$2" = "--simulate" ]; then
     echo "*** SIMULATIONSMODUS – es wird nichts gebrannt ***"
 fi
 
-# Optisches Laufwerk über drutil suchen (zuverlässiger als cdrecord -scanbus auf macOS)
+# cdrecord auf macOS braucht IOKit-Gerätenamen, nicht /dev/diskX
+# Prüfe welcher Name verfügbar ist
 echo "Suche optisches Laufwerk..."
-DISK_NODE="$(drutil status 2>/dev/null | awk '/Name:/{print $NF; exit}')"
+DEVICE=""
+for candidate in IOCompactDiscServices IODVDServices IODVDServices/1; do
+    if sudo "$CDRECORD" -inq "dev=$candidate" &>/dev/null; then
+        DEVICE="$candidate"
+        break
+    fi
+done
 
-if [ -z "$DISK_NODE" ]; then
-    # Fallback: system_profiler
-    DISK_NODE="$(system_profiler SPDiscBurningDataType 2>/dev/null \
-        | awk '/BSD Name:/{print $NF; exit}')"
-fi
-
-if [ -z "$DISK_NODE" ]; then
-    echo "ERROR: Kein optisches Laufwerk gefunden."
+if [ -z "$DEVICE" ]; then
+    echo "ERROR: Kein brennfähiges Laufwerk gefunden."
     echo "       Stelle sicher, dass eine leere CD eingelegt ist."
+    echo "       Verfügbare Geräte: sudo cdrecord -scanbus"
     exit 1
 fi
-
-# cdrecord braucht das raw device (rdisk statt disk)
-DEVICE="/dev/r${DISK_NODE#/dev/}"
 
 echo "Laufwerk: $DEVICE"
 echo "CUE:      $CUE_FILE"
