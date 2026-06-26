@@ -82,6 +82,50 @@ if [ "$MISSING" -gt 0 ]; then
     exit 1
 fi
 
+# Gesamtspieldauer prüfen (80-Minuten-CD = 4800 Sekunden)
+CD_MAX_SECS=4800
+TOTAL_SECS=0
+FFPROBE_BIN="$(command -v ffprobe 2>/dev/null)"
+
+if [ -z "$FFPROBE_BIN" ]; then
+    echo "Warnung: ffprobe nicht gefunden, Dauerprüfung übersprungen."
+else
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^FILE\ \"(.+)\"\ WAVE ]]; then
+            WAV="${BASH_REMATCH[1]}"
+            if [[ "$WAV" = /* ]]; then
+                FULL="$WAV"
+            else
+                FULL="$CUE_DIR/$WAV"
+            fi
+            DUR=$("$FFPROBE_BIN" -v quiet -show_entries format=duration \
+                -of default=noprint_wrappers=1:nokey=1 "$FULL" 2>/dev/null | cut -d. -f1)
+            TOTAL_SECS=$((TOTAL_SECS + ${DUR:-0}))
+        fi
+    done < "$CUE_FILE"
+
+    CD_OVERBURN_MAX_SECS=5400  # 90 Minuten – absolutes Limit auch mit Overburn
+
+    TOTAL_MIN=$((TOTAL_SECS / 60))
+    TOTAL_SEC=$((TOTAL_SECS % 60))
+    echo ""
+    echo "Gesamtspieldauer: ${TOTAL_MIN}:$(printf '%02d' $TOTAL_SEC) min (Standard: 80:00, Overburn-Limit: 90:00)"
+
+    if [ "$TOTAL_SECS" -gt "$CD_OVERBURN_MAX_SECS" ]; then
+        OVER=$((TOTAL_SECS - CD_OVERBURN_MAX_SECS))
+        OVER_MIN=$((OVER / 60))
+        OVER_SEC=$((OVER % 60))
+        echo "ERROR: Playlist ist ${OVER_MIN}:$(printf '%02d' $OVER_SEC) min zu lang selbst für Overburn. Abbruch."
+        echo "       Teile die Playlist in kleinere Sets auf."
+        exit 1
+    elif [ "$TOTAL_SECS" -gt "$CD_MAX_SECS" ]; then
+        OVER=$((TOTAL_SECS - CD_MAX_SECS))
+        OVER_MIN=$((OVER / 60))
+        OVER_SEC=$((OVER % 60))
+        echo "Warnung: Playlist ist ${OVER_MIN}:$(printf '%02d' $OVER_SEC) min über 80 min – wird mit Overburn versucht."
+    fi
+fi
+
 echo ""
 
 # cdrecord braucht root für Gerätezugriff und Echtzeit-Priorität
