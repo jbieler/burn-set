@@ -17,6 +17,8 @@ from pathlib import Path
 
 try:
     from mutagen import File as MutagenFile
+    from mutagen.wave import WAVE
+    from mutagen.id3 import TIT2, TPE1, TALB
 except ImportError:
     print("ERROR: mutagen fehlt. Starte das Skript über run.sh.")
     sys.exit(1)
@@ -161,18 +163,20 @@ def convert_to_wav(src: Path, dst: Path) -> bool:
 
 def write_wav_tags(path: Path, meta: dict) -> None:
     """
-    Schreibt Metadaten als RIFF INFO Chunks in die WAV-Datei via ffmpeg.
-    RIFF INFO (INAM/IART/IPRD) wird von Burn.app für CD Text gelesen
-    und stört cdrecords Sektorberechnung nicht (im Gegensatz zu ID3-Chunks).
+    Schreibt Metadaten in zwei Formaten:
+    1. RIFF INFO Chunks via ffmpeg (für allgemeine Kompatibilität)
+    2. ID3-Tags via mutagen (für Burn.app / MultiTag-Framework)
+    burn.sh entfernt die ID3-Tags vor dem Brennen mit cdrecord.
     """
     title  = sanitize_tag(meta.get("title",  "")) or "Unknown"
     artist = sanitize_tag(meta.get("artist", "")) or "Unknown"
     album  = sanitize_tag(meta.get("album",  ""))
 
+    # Schritt 1: sauberes PCM + RIFF INFO via ffmpeg
     tmp = path.with_suffix(".tmp.wav")
     cmd = [
         FFMPEG, "-y", "-i", str(path),
-        "-map_metadata", "-1",       # alle alten Tags entfernen
+        "-map_metadata", "-1",
         "-metadata", f"title={title}",
         "-metadata", f"artist={artist}",
         "-acodec", "pcm_s16le",
@@ -189,12 +193,27 @@ def write_wav_tags(path: Path, meta: dict) -> None:
         if tmp.exists() and tmp.stat().st_size > 0:
             tmp.replace(path)
         else:
-            print(f"            Warnung: Metadaten konnten nicht geschrieben werden.")
+            print(f"            Warnung: RIFF INFO konnten nicht geschrieben werden.")
+            return
     except Exception as e:
-        print(f"            Warnung: Metadaten-Schritt fehlgeschlagen ({e}).")
+        print(f"            Warnung: RIFF-Schritt fehlgeschlagen ({e}).")
+        return
     finally:
         if tmp.exists():
             tmp.unlink(missing_ok=True)
+
+    # Schritt 2: ID3-Tags via mutagen (für Burn.app)
+    try:
+        audio = WAVE(str(path))
+        if audio.tags is None:
+            audio.add_tags()
+        audio.tags["TIT2"] = TIT2(encoding=3, text=title)
+        audio.tags["TPE1"] = TPE1(encoding=3, text=artist)
+        if album:
+            audio.tags["TALB"] = TALB(encoding=3, text=album)
+        audio.save()
+    except Exception as e:
+        print(f"            Warnung: ID3-Tags konnten nicht geschrieben werden ({e}).")
 
 
 # ---------------------------------------------------------------------------
