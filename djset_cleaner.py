@@ -217,6 +217,52 @@ def split_playlist(tracks: list) -> tuple:
 # Hauptprogramm
 # ---------------------------------------------------------------------------
 
+def process_disc(tracks: list, folder: Path, label: str) -> list:
+    """
+    Kopiert und bereinigt alle Tracks einer Disc in 'folder'
+    (eigene Nummerierung ab 01). Gibt die Liste der Fehler zurück.
+    """
+    folder.mkdir(parents=True, exist_ok=True)
+    total = len(tracks)
+    errors = []
+    col = 45
+
+    print(f"\n▶ {label}  →  {folder.name}/")
+    for i, track in enumerate(tracks, 1):
+        src = Path(track["src_path"])
+        prefix = f"  [{i:02d}/{total}]"
+
+        if not src.exists():
+            print(f"{prefix} [FEHLER]   Datei nicht gefunden:")
+            print(f"             {src}")
+            errors.append(str(src))
+            continue
+
+        source_tags = read_source_tags(src)
+        meta = merge_metadata(source_tags, track["extinf_title"])
+        track["meta"] = meta
+
+        # Dateiname: Nummer + Artist - Title, Originalendung beibehalten
+        name_base = f"{i:02d} - {meta['artist']} - {meta['title']}"
+        clean_stem = sanitize_filename(name_base)
+        out_path = folder / (clean_stem + src.suffix.lower())
+
+        tag_source = "Datei-Tags" if source_tags.get("title") else "EXTINF"
+        display = f"{meta['artist']} - {meta['title']}"
+
+        try:
+            shutil.copy2(src, out_path)      # Original unverändert kopieren
+            clean_tags(out_path, meta)        # nur die Kopie bereinigen
+            track["out_path"] = str(out_path)
+            print(f"{prefix} [OK]       {display[:col]}")
+            print(f"             {src.suffix.upper()[1:]}  |  Tags: {tag_source}")
+        except Exception as e:
+            print(f"{prefix} [FEHLER]   {src.name} → {e}")
+            errors.append(str(src))
+
+    return errors
+
+
 def main():
     if len(sys.argv) < 2:
         print("Verwendung: python3 djset_cleaner.py <playlist.m3u>")
@@ -229,76 +275,47 @@ def main():
 
     stem = sanitize_filename(playlist_path.stem)
     disc_dir = Path.cwd() / stem
-    output_dir = disc_dir / "output"
-    output_dir.mkdir(parents=True, exist_ok=True)
+    disc_dir.mkdir(parents=True, exist_ok=True)
 
     tracks = parse_m3u(playlist_path)
     total = len(tracks)
-    print(f"Playlist: {playlist_path.name}")
-    print(f"Tracks:   {total}")
-    print(f"Output:   {output_dir}\n")
-
-    col = 45
-    errors = []
-
-    for i, track in enumerate(tracks, 1):
-        src = Path(track["src_path"])
-        prefix = f"[{i:02d}/{total}]"
-
-        if not src.exists():
-            print(f"{prefix} [FEHLER]   Datei nicht gefunden:")
-            print(f"            {src}")
-            errors.append(str(src))
-            continue
-
-        source_tags = read_source_tags(src)
-        meta = merge_metadata(source_tags, track["extinf_title"])
-        track["meta"] = meta
-
-        # Dateiname: Nummer + Artist - Title, Originalendung beibehalten
-        name_base = f"{i:02d} - {meta['artist']} - {meta['title']}"
-        clean_stem = sanitize_filename(name_base)
-        out_path = output_dir / (clean_stem + src.suffix.lower())
-
-        tag_source = "Datei-Tags" if source_tags.get("title") else "EXTINF"
-        display = f"{meta['artist']} - {meta['title']}"
-
-        try:
-            # Original unverändert kopieren ...
-            shutil.copy2(src, out_path)
-            # ... dann NUR die Kopie bereinigen
-            clean_tags(out_path, meta)
-            track["out_path"] = str(out_path)
-            print(f"{prefix} [OK]       {display[:col]}")
-            print(f"            {src.suffix.upper()[1:]}  |  Tags: {tag_source}")
-        except Exception as e:
-            print(f"{prefix} [FEHLER]   {src.name} → {e}")
-            errors.append(str(src))
-
-    completed = [t for t in tracks if t.get("out_path")]
-    secs = total_duration_seconds(completed)
+    secs = total_duration_seconds(tracks)
     LIMIT = 80 * 60
 
-    print(f"\n{'─' * 55}")
-    print(f"Fertig: {total - len(errors)}/{total} Tracks bereinigt")
+    print(f"Playlist:    {playlist_path.name}")
+    print(f"Tracks:      {total}")
     print(f"Gesamtlänge: {secs // 60}:{secs % 60:02d} min")
+    print(f"Ordner:      {disc_dir}")
+
+    errors = []
+    folders = []
 
     if secs > LIMIT:
-        tracks_a, tracks_b = split_playlist(completed)
+        tracks_a, tracks_b = split_playlist(tracks)
+        dir_a = disc_dir / (stem + "_A")
+        dir_b = disc_dir / (stem + "_B")
         secs_a = total_duration_seconds(tracks_a)
         secs_b = total_duration_seconds(tracks_b)
 
-        write_m3u(tracks_a, disc_dir / (stem + "_A.m3u"))
-        write_m3u(tracks_b, disc_dir / (stem + "_B.m3u"))
+        print(f"\n> 80 min → aufgeteilt in A und B (abwechselnd 1→A, 2→B, 3→A, …)")
 
-        print(f"Playlist > 80 min → aufgeteilt in A und B (abwechselnd):")
-        print(f"  Disc A: {len(tracks_a)} Tracks, {secs_a // 60}:{secs_a % 60:02d} min → {stem}_A.m3u")
-        print(f"  Disc B: {len(tracks_b)} Tracks, {secs_b // 60}:{secs_b % 60:02d} min → {stem}_B.m3u")
+        errors += process_disc(tracks_a, dir_a,
+                               f"Disc A ({len(tracks_a)} Tracks, {secs_a // 60}:{secs_a % 60:02d} min)")
+        write_m3u(tracks_a, dir_a / (stem + "_A.m3u"))
+
+        errors += process_disc(tracks_b, dir_b,
+                               f"Disc B ({len(tracks_b)} Tracks, {secs_b // 60}:{secs_b % 60:02d} min)")
+        write_m3u(tracks_b, dir_b / (stem + "_B.m3u"))
+
+        folders = [dir_a, dir_b]
     else:
-        write_m3u(completed, disc_dir / (stem + ".m3u"))
-        print(f"Playlist: {stem}.m3u")
+        errors += process_disc(tracks, disc_dir,
+                               f"Disc ({total} Tracks, {secs // 60}:{secs % 60:02d} min)")
+        write_m3u(tracks, disc_dir / (stem + ".m3u"))
+        folders = [disc_dir]
 
-    print(f"Ordner:   {disc_dir}")
+    print(f"\n{'─' * 55}")
+    print(f"Fertig: {total - len(errors)}/{total} Tracks bereinigt")
 
     if errors:
         print(f"\nFehler ({len(errors)}):")
@@ -306,9 +323,10 @@ def main():
             print(f"  • {e}")
 
     print()
-    print("Nächster Schritt in Burn.app:")
+    print("Nächster Schritt in Burn.app (pro CD):")
     print("  1. Neue Audio-CD anlegen")
-    print(f"  2. Dateien aus '{output_dir}' per Drag & Drop hineinziehen")
+    for fol in folders:
+        print(f"  2. Dateien aus '{fol}' per Drag & Drop hineinziehen")
     print("  3. Reihenfolge stimmt durch die Nummerierung automatisch")
     print("  4. Brennen")
 
