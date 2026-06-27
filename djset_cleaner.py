@@ -16,10 +16,7 @@ import unicodedata
 from pathlib import Path
 
 try:
-    import mutagen
     from mutagen import File as MutagenFile
-    from mutagen.wave import WAVE
-    from mutagen.id3 import TIT2, TPE1, TALB, ID3
 except ImportError:
     print("ERROR: mutagen fehlt. Starte das Skript über run.sh.")
     sys.exit(1)
@@ -164,35 +161,40 @@ def convert_to_wav(src: Path, dst: Path) -> bool:
 
 def write_wav_tags(path: Path, meta: dict) -> None:
     """
-    Schreibt ID3v2.3-Tags in die WAV-Datei.
-    Burn.app liest diese Tags und überträgt sie als CD Text auf die Disc.
-    encoding=3 = UTF-8
+    Schreibt Metadaten als RIFF INFO Chunks in die WAV-Datei via ffmpeg.
+    RIFF INFO (INAM/IART/IPRD) wird von Burn.app für CD Text gelesen
+    und stört cdrecords Sektorberechnung nicht (im Gegensatz zu ID3-Chunks).
     """
-    try:
-        audio = WAVE(str(path))
-        if audio.tags is None:
-            audio.add_tags()
-        t = audio.tags
-        title = sanitize_tag(meta.get("title", "")) or "Unknown"
-        artist = sanitize_tag(meta.get("artist", "")) or "Unknown"
-        album = sanitize_tag(meta.get("album", ""))
+    title  = sanitize_tag(meta.get("title",  "")) or "Unknown"
+    artist = sanitize_tag(meta.get("artist", "")) or "Unknown"
+    album  = sanitize_tag(meta.get("album",  ""))
 
-        t["TIT2"] = TIT2(encoding=3, text=title)
-        t["TPE1"] = TPE1(encoding=3, text=artist)
-        if album:
-            t["TALB"] = TALB(encoding=3, text=album)
-        audio.save()
-    except Exception:
-        # Fallback: alle Tags per ffmpeg strippen – lieber keine als kaputte
-        tmp = path.with_suffix(".tmp.wav")
-        cmd = [FFMPEG, "-y", "-i", str(path), "-map_metadata", "-1",
-               "-acodec", "copy", str(tmp)]
-        try:
-            subprocess.run(cmd, capture_output=True, timeout=60)
-            if tmp.exists():
-                tmp.replace(path)
-        except Exception:
-            pass
+    tmp = path.with_suffix(".tmp.wav")
+    cmd = [
+        FFMPEG, "-y", "-i", str(path),
+        "-map_metadata", "-1",       # alle alten Tags entfernen
+        "-metadata", f"title={title}",
+        "-metadata", f"artist={artist}",
+        "-acodec", "pcm_s16le",
+        "-ar", TARGET_SR,
+        "-ac", TARGET_CH,
+        str(tmp),
+    ]
+    if album:
+        cmd.insert(cmd.index("-acodec"), "-metadata")
+        cmd.insert(cmd.index("-acodec"), f"album={album}")
+
+    try:
+        subprocess.run(cmd, capture_output=True, timeout=120)
+        if tmp.exists() and tmp.stat().st_size > 0:
+            tmp.replace(path)
+        else:
+            print(f"            Warnung: Metadaten konnten nicht geschrieben werden.")
+    except Exception as e:
+        print(f"            Warnung: Metadaten-Schritt fehlgeschlagen ({e}).")
+    finally:
+        if tmp.exists():
+            tmp.unlink(missing_ok=True)
 
 
 # ---------------------------------------------------------------------------

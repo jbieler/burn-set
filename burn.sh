@@ -126,18 +126,59 @@ else
     fi
 fi
 
+FFMPEG_BIN="$(command -v ffmpeg 2>/dev/null)"
+SPEED=8
+
+# Tag-freie WAV-Kopien erstellen
+# ID3-Chunks in WAV-Dateien verschieben cdrecords Sektorberechnung,
+# wodurch nur Track 1 auf dem CD-Player abspielbar ist.
+# Lösung: vor dem Brennen neu encoden ohne Metadaten.
+BURN_TMP="$(mktemp -d)"
+BURN_CUE="$BURN_TMP/$(basename "$CUE_FILE")"
+
+cleanup() {
+    rm -rf "$BURN_TMP"
+}
+trap cleanup EXIT
+
+echo "Erstelle tag-freie WAV-Kopien..."
+
+if [ -z "$FFMPEG_BIN" ]; then
+    echo "ERROR: ffmpeg nicht gefunden."
+    exit 1
+fi
+
+while IFS= read -r line; do
+    if [[ "$line" =~ ^FILE\ \"(.+)\"\ WAVE ]]; then
+        WAV="${BASH_REMATCH[1]}"
+        if [[ "$WAV" = /* ]]; then
+            ORIG="$WAV"
+        else
+            ORIG="$CUE_DIR/$WAV"
+        fi
+        CLEAN="$BURN_TMP/$(basename "$WAV")"
+        # Neu encoden (nicht nur kopieren) damit der ID3-Chunk garantiert entfernt wird
+        "$FFMPEG_BIN" -y -i "$ORIG" \
+            -map_metadata -1 \
+            -acodec pcm_s16le \
+            -ar 44100 -ac 2 \
+            "$CLEAN" 2>/dev/null
+        echo "  OK: $(basename "$WAV")"
+        echo "FILE \"$CLEAN\" WAVE" >> "$BURN_CUE"
+    else
+        echo "$line" >> "$BURN_CUE"
+    fi
+done < "$CUE_FILE"
+
 echo ""
 
-# cdrecord braucht root für Gerätezugriff und Echtzeit-Priorität
-cd "$CUE_DIR"
-
-SPEED=8
+cd "$BURN_TMP"
 
 if [ "$SIMULATE" -eq 1 ]; then
     echo "Simulation (kein echter Brennvorgang):"
-    sudo "$CDRECORD" -v -dao -text -pad -overburn -dummy "speed=$SPEED" "dev=$DEVICE" "cuefile=$(basename "$CUE_FILE")"
+    sudo "$CDRECORD" -v -dao -text -pad -overburn -dummy "speed=$SPEED" "dev=$DEVICE" "cuefile=$(basename "$BURN_CUE")"
 else
     echo "Starte Brennvorgang mit ${SPEED}x – CD nicht entnehmen!"
     echo ""
-    sudo "$CDRECORD" -v -dao -text -pad -overburn "speed=$SPEED" "dev=$DEVICE" "cuefile=$(basename "$CUE_FILE")"
+    sudo "$CDRECORD" -v -dao -text -pad -overburn "speed=$SPEED" "dev=$DEVICE" "cuefile=$(basename "$BURN_CUE")"
 fi
