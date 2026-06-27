@@ -6,33 +6,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 echo "DJ Set Cleaner – Installation"
 echo "────────────────────────────────"
 
-# Homebrew
-if ! command -v brew &>/dev/null; then
-    echo "ERROR: Homebrew ist nicht installiert."
-    echo "       Installiere es zuerst: https://brew.sh"
-    exit 1
-fi
-
-# ffmpeg
-if ! command -v ffmpeg &>/dev/null; then
-    echo "→ Installiere ffmpeg..."
-    brew install ffmpeg
-else
-    echo "✓ ffmpeg vorhanden ($(ffmpeg -version 2>&1 | head -1 | cut -d' ' -f3))"
-fi
-
-# cdrtools (cdrecord zum Brennen)
-if ! command -v cdrecord &>/dev/null; then
-    echo "→ Installiere cdrtools (cdrecord)..."
-    brew install cdrtools
-else
-    echo "✓ cdrecord vorhanden"
-fi
-
 # Python 3
 if ! command -v python3 &>/dev/null; then
-    echo "→ Installiere python..."
-    brew install python
+    if command -v brew &>/dev/null; then
+        echo "→ Installiere python..."
+        brew install python
+    else
+        echo "ERROR: python3 nicht gefunden und Homebrew nicht installiert."
+        echo "       Installiere Python: https://www.python.org oder https://brew.sh"
+        exit 1
+    fi
 else
     echo "✓ python3 vorhanden ($(python3 --version))"
 fi
